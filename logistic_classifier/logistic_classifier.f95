@@ -8,7 +8,7 @@ program logical_classifier
    real(dp), allocatable :: data(:, :), t(:), x(:, :), w(:)
 
    real(dp) :: fit
-   integer :: n, s, it, ixs, ixe, num, i, u = 10, status, correct = 0
+   integer :: n, s, o, it, ixs, ixe, num, i, u = 10, status, correct = 0
    character(80) :: filename
 
    write (unit=*, fmt="(a)", advance="no") " Enter filename: "
@@ -23,10 +23,14 @@ program logical_classifier
    read (unit=*, fmt="(i5)") ixs
    write (unit=*, fmt="(a)", advance="no") " Enter ending index of x column: "
    read (unit=*, fmt="(i5)") ixe
+   write (unit=*, fmt="(a)", advance="no") " Enter order of fit function: "
+   read (unit=*, fmt="(i5)") o
 
    num = ixe - ixs + 2
 
-   allocate (data(n, s), x(n, num), w(num))
+   allocate (data(n, s), x(n, num), w((num - 1)*o + 1))
+
+   write (*, *) (num - 1)*o + 1
 
    open (unit=u, file=filename, action="read", status="old")
 
@@ -43,59 +47,67 @@ program logical_classifier
 
    CALL random_number(w)
 
-   CALL ascent(w, x, t, step, threshold)
+   CALL ascent(w, x, t, step, threshold, o, o - 1)
 
    write (*, *)
 
-   DO i = 1, num
+   DO i = 1, (num - 1)*o + 1
       write (unit=*, fmt="(a, i5   )", advance="no") " Weight ", i
       write (unit=*, fmt="(a       )", advance="no") ":"
       write (unit=*, fmt="(E15.7   )") w(i)
    END DO
 
-   DO i = 1, n
-      fit = sum(x(i, :)*w)
-      IF ((t(i) == 0.0_dp .AND. fit < 0) .OR. (t(i) == 1.0_dp .AND. fit > 0)) correct = correct + 1
-   END DO
+   !DO i = 1, n
+   !   fit = sum(x(i, :)*w)
+   !   IF ((t(i) == 0.0_dp .AND. fit < 0) .OR. (t(i) == 1.0_dp .AND. fit > 0)) correct = correct + 1
+   !END DO
 
-   write (*, *)
+   !write (*, *)
 
-   write (unit=*, fmt="(a)", advance="no") " Accuracy:"
-   write (unit=*, fmt="(E15.7)") real(correct)/real(n)
+   !write (unit=*, fmt="(a)", advance="no") " Accuracy:"
+   !write (unit=*, fmt="(E15.7)") real(correct)/real(n)
 
 CONTAINS
-   SUBROUTINE ascent(w, x, t, step, threshold)
+   SUBROUTINE ascent(w, x, t, step, threshold, s, n)
       real(dp), dimension(:), intent(out) :: w
       real(dp), dimension(:, :), intent(in) :: x
       real(dp), dimension(:), intent(in) :: t
       real(dp), dimension(size(w)) :: d, wp
       real(dp) :: step, threshold
+      integer :: n, s
 
       wp = w
 
-      CALL derive(w, x, t, d)
+      write (*, *) s, n
+
+      CALL derive(w, x, t, d, s, n)
 
       DO WHILE (norm2(d) > threshold)
-         CALL derive(wp, x, t, d)
+         CALL derive(wp, x, t, d, s, n)
          w = wp + step*d
          wp = w
       END DO
    END SUBROUTINE
 
-   SUBROUTINE derive(w, x, t, d)
+   SUBROUTINE derive(w, x, t, d, s, j)
       real(dp), dimension(:), intent(in) :: w
       real(dp), dimension(:, :), intent(in) :: x
       real(dp), dimension(:), intent(in) :: t
       real(dp), dimension(:), intent(out) :: d
-      integer :: i
+      real(dp) :: weights
+      integer, intent(in) :: s, j
+      integer :: i, k
 
       d = 0.0_dp
 
-      !$OMP PARALLEL DO REDUCTION(+:d)
-      DO i = 1, size(x, 1)
-         d = d + (t(i) - sigmoid(sum(w*x(i, :))))*x(i, :)
+      DO i = 1, size(t)
+         !d = d + (t(i) - sigmoid(sum(w*x(i, :))))*x(i, :)
+         weights = w(1)
+         DO k = 0, j
+            weights = weights + sum(w(2 + k*s:1 + k*s + s)*x(i, 2:)**(k + 1))
+         END DO
+         d = d + (t(i) - sigmoid(weights))*x(i, :)
       END DO
-      !$OMP END PARALLEL DO
    END SUBROUTINE
 
    PURE FUNCTION sigmoid(x) RESULT(r)
